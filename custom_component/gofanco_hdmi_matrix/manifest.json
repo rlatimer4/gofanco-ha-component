@@ -1,0 +1,11 @@
+{
+  "domain": "hdmi_matrix_switcher",
+  "name": "HDMI Matrix Switcher",
+  "config_flow": true,
+  "documentation": "https://github.com/rlatimer4/gofanco-ha-component",
+  "issue_tracker": "https://github.com/rlatimer4/gofanco-ha-component/issues",
+  "codeowners": ["@rlatimer4"],
+  "requirements": [],
+  "version": "1.0.0",
+  "iot_class": "local_polling"
+}
