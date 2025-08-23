@@ -1,4 +1,3 @@
-CONFIG_FLOW_PY = '''"""Config flow for Gofanco HDMI Matrix integration."""
 import asyncio
 import logging
 from typing import Any, Dict, Optional
