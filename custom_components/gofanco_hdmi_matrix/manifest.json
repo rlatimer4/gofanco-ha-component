@@ -1,11 +1,13 @@
 {
-  "domain": "hdmi_matrix_switcher",
-  "name": "HDMI Matrix Switcher",
+  "domain": "gofanco_hdmi_matrix",
+  "name": "Gofanco HDMI Matrix",
+  "codeowners": ["@your_github_username"],
   "config_flow": true,
-  "documentation": "https://github.com/rlatimer4/gofanco-ha-component",
-  "issue_tracker": "https://github.com/rlatimer4/gofanco-ha-component/issues",
-  "codeowners": ["@rlatimer4"],
+  "dependencies": [],
+  "documentation": "https://github.com/your_username/gofanco-hdmi-matrix",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/your_username/gofanco-hdmi-matrix/issues",
   "requirements": [],
-  "version": "1.0.0",
-  "iot_class": "local_polling"
+  "version": "1.0.0"
 }
