@@ -1,4 +1,3 @@
-API_PY = '''"""API client for Gofanco HDMI Matrix."""
 import asyncio
 import json
 import logging
