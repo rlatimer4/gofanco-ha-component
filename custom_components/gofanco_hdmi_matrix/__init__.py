@@ -1,14 +1,13 @@
 import asyncio
 import logging
-from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import GofancoMatrixAPI
-from .const import DOMAIN, UPDATE_INTERVAL
+from .const import DOMAIN
+from .coordinator import GofancoMatrixDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,25 +37,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id)
     
     return unload_ok
-
-class GofancoMatrixDataUpdateCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching data from the API."""
-    
-    def __init__(self, hass: HomeAssistant, api: GofancoMatrixAPI, name: str):
-        """Initialize."""
-        self.api = api
-        self.name = name
-        
-        super().__init__(
-            hass,
-            _LOGGER,
-            name="Gofanco HDMI Matrix",
-            update_interval=timedelta(seconds=UPDATE_INTERVAL),
-        )
-    
-    async def _async_update_data(self):
-        """Update data via library."""
-        try:
-            return await self.api.async_get_status()
-        except Exception as exception:
-            raise UpdateFailed(f"Error communicating with API: {exception}")
