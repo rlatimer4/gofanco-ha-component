@@ -1,16 +1,14 @@
-"""Select entities for the HDMI Matrix Switcher."""
+SELECT_PY = '''"""Select platform for Gofanco HDMI Matrix."""
 import logging
+from typing import Any, Dict, Optional
 
-import aiohttp
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
-from .coordinator import HDMIMatrixCoordinator
+from .const import DEVICE_INFO, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,79 +17,122 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the select entities."""
-    coordinator: HDMIMatrixCoordinator = hass.data[DOMAIN][entry.entry_id]
+    """Set up the select platform."""
+    coordinator = hass.data[DOMAIN][entry.entry_id]
     
-    entities = [
-        HDMIMatrixSelect(coordinator, i) for i in range(1, 5)
-    ]
+    entities = []
+    
+    # Create a select entity for each output
+    for output in range(1, 5):  # Outputs 1-4
+        entities.append(GofancoMatrixOutputSelect(coordinator, output))
     
     async_add_entities(entities)
 
-
-class HDMIMatrixSelect(CoordinatorEntity[HDMIMatrixCoordinator], SelectEntity):
-    """Representation of an HDMI Matrix output select entity."""
-
-    def __init__(self, coordinator: HDMIMatrixCoordinator, output_index: int) -> None:
+class GofancoMatrixOutputSelect(CoordinatorEntity, SelectEntity):
+    """Select entity for choosing input source for an output."""
+    
+    def __init__(self, coordinator, output: int):
         """Initialize the select entity."""
         super().__init__(coordinator)
-        self._output_index = output_index
-        self._attr_unique_id = f"{coordinator.host}_output_{output_index}"
+        self._output = output
         
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.host)},
-            name="4x4 HDMI Matrix",
-            manufacturer="WebUI Controlled",
-            model="4x4 Matrix Switch",
-            configuration_url=f"http://{coordinator.host}",
-        )
-
+        # Get output name from last status
+        status = coordinator.data or {}
+        output_name = status.get(f"nameout{output}", f"Output {output}")
+        
+        self._attr_name = f"{output_name} Input Source"
+        self._attr_unique_id = f"{DOMAIN}_output_{output}_input_select"
+        self._attr_icon = "mdi:video-input-hdmi"
+        
+        # Set up options - will be updated when coordinator data is available
+        self._update_options()
+    
+    def _update_options(self):
+        """Update the available options based on current device status."""
+        if not self.coordinator.data:
+            # Default options if no data available yet
+            self._attr_options = [f"Input {i}" for i in range(1, 5)]
+        else:
+            # Use custom input names from device
+            options = []
+            for i in range(1, 5):
+                input_name = self.coordinator.data.get(f"namein{i}", f"Input {i}")
+                options.append(input_name)
+            self._attr_options = options
+    
     @property
-    def name(self) -> str:
-        """Return the name of the entity."""
-        return self.coordinator.data.get(f"nameout{self._output_index}", f"Output {self._output_index}")
-
+    def device_info(self) -> Dict[str, Any]:
+        """Return device information."""
+        return DEVICE_INFO
+    
     @property
-    def current_option(self) -> str | None:
-        """Return the currently selected option."""
+    def current_option(self) -> Optional[str]:
+        """Return the currently selected input."""
         if not self.coordinator.data:
             return None
-        current_input = self.coordinator.data.get(f"out{self._output_index}")
+        
+        current_input = self.coordinator.data.get(f"out{self._output}")
         if current_input:
-            return self.coordinator.data.get(f"namein{current_input}")
+            input_num = int(current_input)
+            input_name = self.coordinator.data.get(f"namein{input_num}", f"Input {input_num}")
+            return input_name
+        
         return None
-
-    @property
-    def options(self) -> list[str]:
-        """Return the list of available options."""
-        if not self.coordinator.data:
-            return []
-        return [
-            self.coordinator.data.get(f"namein{i}", f"Input {i}") for i in range(1, 5)
-        ]
-
+    
     async def async_select_option(self, option: str) -> None:
-        """Change the selected option."""
-        input_to_set = None
+        """Select an input source."""
+        if not self.coordinator.data:
+            _LOGGER.error("No coordinator data available")
+            return
+        
+        # Find the input number for the selected option
+        input_num = None
         for i in range(1, 5):
-            if self.coordinator.data.get(f"namein{i}") == option:
-                input_to_set = i
+            input_name = self.coordinator.data.get(f"namein{i}", f"Input {i}")
+            if input_name == option:
+                input_num = i
                 break
         
-        if input_to_set is None:
-            _LOGGER.error("Could not find input for option %s", option)
+        if input_num is None:
+            _LOGGER.error("Could not find input number for option: %s", option)
             return
-
-        url = f"http://{self.coordinator.host}/inform.cgi"
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        payload = f"out{self._output_index}={input_to_set}"
-
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, data=payload, headers=headers) as response:
-                    if response.status >= 400:
-                        _LOGGER.error("Error switching input: %s", await response.text())
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Error communicating with HDMI Matrix to switch input: %s", err)
-
-        await self.coordinator.async_request_refresh()
+        
+        success = await self.coordinator.api.async_set_output(self._output, input_num)
+        
+        if success:
+            await self.coordinator.async_request_refresh()
+        else:
+            _LOGGER.error(
+                "Failed to set output %s to input %s (%s)",
+                self._output,
+                input_num,
+                option,
+            )
+    
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return additional state attributes."""
+        if not self.coordinator.data:
+            return {}
+        
+        current_input = self.coordinator.data.get(f"out{self._output}")
+        
+        return {
+            "output": self._output,
+            "current_input_number": current_input,
+            "output_name": self.coordinator.data.get(f"nameout{self._output}", f"Output {self._output}"),
+            "available_inputs": {
+                i: self.coordinator.data.get(f"namein{i}", f"Input {i}")
+                for i in range(1, 5)
+            },
+        }
+    
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        self._update_options()
+    
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self._update_options()
+        super()._handle_coordinator_update()
