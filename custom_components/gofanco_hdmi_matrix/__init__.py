@@ -13,7 +13,7 @@ from .const import DOMAIN, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SELECT, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.SELECT]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Gofanco HDMI Matrix from a config entry."""
