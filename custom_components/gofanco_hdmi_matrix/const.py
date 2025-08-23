@@ -1,5 +1,3 @@
-CONST_PY = '''"""Constants for Gofanco HDMI Matrix integration."""
-
 DOMAIN = "gofanco_hdmi_matrix"
 MANUFACTURER = "Gofanco"
 MODEL = "4x4 HDMI Matrix"
