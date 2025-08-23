@@ -35,11 +35,8 @@ class GofancoMatrixOutputSelect(CoordinatorEntity, SelectEntity):
         super().__init__(coordinator)
         self._output = output
         
-        # Get output name from last status
-        status = coordinator.data or {}
-        output_name = status.get(f"nameout{output}", f"Output {output}")
-        
-        self._attr_name = f"{output_name} Input Source"
+        # Use output number for consistent entity ID
+        self._attr_name = f"Output {output} Input Source"
         self._attr_unique_id = f"{DOMAIN}_output_{output}_input_select"
         self._attr_icon = "mdi:video-input-hdmi"
         
@@ -63,6 +60,14 @@ class GofancoMatrixOutputSelect(CoordinatorEntity, SelectEntity):
     def device_info(self) -> Dict[str, Any]:
         """Return device information."""
         return DEVICE_INFO
+    
+    @property
+    def name(self) -> str:
+        """Return the friendly name using custom output name."""
+        if self.coordinator.data:
+            output_name = self.coordinator.data.get(f"nameout{self._output}", f"Output {self._output}")
+            return f"{output_name} Input Source"
+        return f"Output {self._output} Input Source"
     
     @property
     def current_option(self) -> Optional[str]:
