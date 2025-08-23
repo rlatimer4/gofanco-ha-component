@@ -1,4 +1,3 @@
-INIT_PY = '''"""The Gofanco HDMI Matrix integration."""
 import asyncio
 import logging
 from datetime import timedelta
