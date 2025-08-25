@@ -1,13 +1,13 @@
 {
   "domain": "gofanco_hdmi_matrix",
   "name": "Gofanco HDMI Matrix",
-  "codeowners": ["@your_github_username"],
+  "codeowners": ["@rlatimer4"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/your_username/gofanco-hdmi-matrix",
+  "documentation": "https://github.com/rlatimer4/gofanco-hdmi-matrix",
   "integration_type": "device",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/your_username/gofanco-hdmi-matrix/issues",
+  "issue_tracker": "https://github.com/rlatimer4/gofanco-hdmi-matrix/issues",
   "requirements": [],
-  "version": "1.0.0"
+  "version": "1.0.1"
 }
