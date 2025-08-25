@@ -1,3 +1,4 @@
+"""API client for Gofanco HDMI Matrix."""
 import asyncio
 import json
 import logging
@@ -55,8 +56,11 @@ class GofancoMatrixAPI:
     async def _send_http09_request(self, payload: str, content_type: str) -> Optional[str]:
         """Send HTTP/0.9 compatible request and handle malformed responses."""
         try:
-            # Create socket connection
-            reader, writer = await asyncio.open_connection(self.host, self.port)
+            # Create socket connection with timeout
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(self.host, self.port),
+                timeout=10.0
+            )
             
             # Construct HTTP request
             request = (
@@ -73,14 +77,19 @@ class GofancoMatrixAPI:
             writer.write(request.encode())
             await writer.drain()
             
-            # Read response - device returns malformed HTTP/0.9 responses
-            response_data = await reader.read()
+            # Read response with timeout - device returns malformed HTTP/0.9 responses
+            response_data = await asyncio.wait_for(
+                reader.read(),
+                timeout=5.0
+            )
             writer.close()
             await writer.wait_closed()
             
             # Decode response
             response_text = response_data.decode('utf-8', errors='ignore')
-            _LOGGER.debug("Raw response: %s", repr(response_text))
+            # Only log in debug mode and sanitize sensitive data
+            if _LOGGER.isEnabledFor(logging.DEBUG):
+                _LOGGER.debug("Raw response length: %d bytes", len(response_text))
             
             # The device returns malformed responses - extract JSON directly
             # Look for JSON content (starts with '{' and ends with '}')
@@ -110,9 +119,12 @@ class GofancoMatrixAPI:
                     except json.JSONDecodeError:
                         pass
             
-            _LOGGER.warning("Could not extract valid JSON from response: %s", repr(response_text))
+            _LOGGER.warning("Could not extract valid JSON from response")
             return None
             
+        except asyncio.TimeoutError:
+            _LOGGER.error("Timeout connecting to device at %s:%s", self.host, self.port)
+            return None
         except Exception as e:
             _LOGGER.error("Error sending HTTP/0.9 request: %s", e)
             return None
