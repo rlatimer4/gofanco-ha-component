@@ -1,4 +1,6 @@
+"""Config flow for Gofanco HDMI Matrix integration."""
 import asyncio
+import ipaddress
 import logging
 from typing import Any, Dict, Optional
 
@@ -13,9 +15,17 @@ from .const import DEFAULT_NAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+def validate_ip(value: str) -> str:
+    """Validate IP address format."""
+    try:
+        ipaddress.ip_address(value)
+        return value
+    except ValueError:
+        raise vol.Invalid("Invalid IP address format")
+
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_HOST): str,
+        vol.Required(CONF_HOST): validate_ip,
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): str,
     }
 )
