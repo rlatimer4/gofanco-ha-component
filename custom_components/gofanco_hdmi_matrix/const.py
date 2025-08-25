@@ -17,7 +17,7 @@ API_ENDPOINT = "/inform.cgi"
 # Device info
 DEVICE_INFO = {
     "identifiers": {(DOMAIN, "gofanco_4x4_matrix")},
-    "manufacturer": MANUFACTURER,
-    "model": MODEL,
-    "name": DEFAULT_NAME,
+    "manufacturer": Gofanco,
+    "model": PRO-Matrix44-SC,
+    "name": HDMI_matrix,
 }
