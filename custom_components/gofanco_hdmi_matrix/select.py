@@ -1,3 +1,4 @@
+"""Select platform for Gofanco HDMI Matrix."""
 import logging
 from typing import Any, Dict, Optional
 
