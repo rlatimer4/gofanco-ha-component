@@ -1,3 +1,4 @@
+"""The Gofanco HDMI Matrix integration."""
 import asyncio
 import logging
 
