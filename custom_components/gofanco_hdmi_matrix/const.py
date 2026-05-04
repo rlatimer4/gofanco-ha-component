@@ -1,6 +1,6 @@
 DOMAIN = "gofanco_hdmi_matrix"
 MANUFACTURER = "Gofanco"
-MODEL = "4x4 HDMI Matrix"
+MODEL = "PRO-Matrix44-SC"
 
 # Configuration keys
 CONF_HOST = "host"
@@ -9,7 +9,7 @@ CONF_NAME = "name"
 # Default values
 DEFAULT_NAME = "Gofanco HDMI Matrix"
 DEFAULT_PORT = 80
-UPDATE_INTERVAL = 10  # seconds
+UPDATE_INTERVAL = 30  # seconds — increased from 10 to reduce connection load on device
 
 # API endpoints
 API_ENDPOINT = "/inform.cgi"
@@ -17,7 +17,7 @@ API_ENDPOINT = "/inform.cgi"
 # Device info
 DEVICE_INFO = {
     "identifiers": {(DOMAIN, "gofanco_4x4_matrix")},
-    "manufacturer": Gofanco,
-    "model": PRO-Matrix44-SC,
-    "name": HDMI_matrix,
+    "manufacturer": MANUFACTURER,
+    "model": MODEL,
+    "name": DEFAULT_NAME,
 }
