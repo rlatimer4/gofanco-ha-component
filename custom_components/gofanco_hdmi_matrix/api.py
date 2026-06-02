@@ -14,7 +14,7 @@ MIN_REQUEST_INTERVAL = 2.0
 
 # How long to wait after a switch command before verifying the change.
 # The device needs time to process; 0.5s was too short.
-POST_SWITCH_DELAY = 2.0
+POST_SWITCH_DELAY = 3.0
 
 
 class GofancoMatrixAPI:
@@ -25,6 +25,7 @@ class GofancoMatrixAPI:
         self.host = host
         self.port = port
         self._last_status: Dict[str, Any] = {}
+        self._command_in_flight = False
 
         # Semaphore ensures only one request is in-flight at a time,
         # preventing concurrent connections from stacking up on the device.
@@ -53,6 +54,7 @@ class GofancoMatrixAPI:
 
     async def async_set_output(self, output: int, input_source: int) -> bool:
         """Set an output to a specific input source."""
+        self._command_in_flight = True
         try:
             payload = f"out{output}={input_source}"
             content_type = "Content-Type: application/x-www-form-urlencoded"
@@ -71,6 +73,9 @@ class GofancoMatrixAPI:
             _LOGGER.error(
                 "Error setting output %s to input %s: %s", output, input_source, e
             )
+
+        finally:
+            self._command_in_flight = False
 
         return False
 
@@ -125,12 +130,21 @@ class GofancoMatrixAPI:
             writer.write(request.encode())
             await writer.drain()
 
-            response_data = await asyncio.wait_for(
-                reader.read(),
-                timeout=5.0,
-            )
+            chunks = []
+            accumulated = ""
+            while True:
+                chunk = await asyncio.wait_for(reader.read(4096), timeout=2.0)
+                if not chunk:
+                    break
+                accumulated += chunk.decode("utf-8", errors="ignore")
+                chunks.append(chunk)
+                # Stop as soon as we have a balanced JSON object
+                open_count = accumulated.count("{")
+                close_count = accumulated.count("}")
+                if open_count > 0 and open_count == close_count:
+                    break
 
-            response_text = response_data.decode("utf-8", errors="ignore")
+            response_text = accumulated
 
             if _LOGGER.isEnabledFor(logging.DEBUG):
                 _LOGGER.debug("Raw response length: %d bytes", len(response_text))
