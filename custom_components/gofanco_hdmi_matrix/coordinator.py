@@ -26,8 +26,10 @@ class GofancoMatrixDataUpdateCoordinator(DataUpdateCoordinator):
     
     async def _async_update_data(self):
         """Update data via library."""
-        if self.api._command_in_flight:
-            _LOGGER.debug("Skipping poll — command in flight")
+        if self.api.should_skip_poll():
+            _LOGGER.debug(
+                "Skipping poll — command in flight or backing off after timeout"
+            )
             return self.data
         try:
             return await self.api.async_get_status()

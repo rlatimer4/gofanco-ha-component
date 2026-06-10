@@ -16,6 +16,11 @@ MIN_REQUEST_INTERVAL = 2.0
 # The device needs time to process; 0.5s was too short.
 POST_SWITCH_DELAY = 3.0
 
+# After a request times out, stop polling for this long. A timeout means the
+# device's single-threaded server is busy (e.g. a save/recall from the web UI
+# can hold it for >2 minutes); stacking more SYNs on it makes things worse.
+TIMEOUT_BACKOFF = 120.0
+
 
 class GofancoMatrixAPI:
     """API client for Gofanco HDMI Matrix with HTTP/0.9 support."""
@@ -27,6 +32,10 @@ class GofancoMatrixAPI:
         self._last_status: Dict[str, Any] = {}
         self._command_in_flight = False
 
+        # Monotonic deadline before which polls should be skipped. Set after a
+        # request times out so we leave the device alone while it recovers.
+        self._backoff_until: float = 0.0
+
         # Semaphore ensures only one request is in-flight at a time,
         # preventing concurrent connections from stacking up on the device.
         self._request_lock = asyncio.Semaphore(1)
@@ -34,6 +43,12 @@ class GofancoMatrixAPI:
         # Tracks the monotonic time of the last completed request so we can
         # enforce a minimum gap between requests.
         self._last_request_time: float = 0.0
+
+    def should_skip_poll(self) -> bool:
+        """Return True if the coordinator should skip this poll cycle."""
+        if self._command_in_flight:
+            return True
+        return asyncio.get_event_loop().time() < self._backoff_until
 
     async def async_get_status(self) -> Optional[Dict[str, Any]]:
         """Get the current status of the matrix."""
@@ -110,6 +125,7 @@ class GofancoMatrixAPI:
         """Execute the raw TCP request. Called only from _send_http09_request."""
         reader = None
         writer = None
+        request_failed = False
 
         try:
             reader, writer = await asyncio.wait_for(
@@ -142,6 +158,14 @@ class GofancoMatrixAPI:
                 open_count = accumulated.count("{")
                 close_count = accumulated.count("}")
                 if open_count > 0 and open_count == close_count:
+                    # Briefly wait for the device's own close (EOF) so our
+                    # FIN arrives after it has finished sending, the same
+                    # sequence a browser produces. Don't wait long if the
+                    # device keeps the connection open.
+                    try:
+                        await asyncio.wait_for(reader.read(4096), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        pass
                     break
 
             response_text = accumulated
@@ -178,28 +202,42 @@ class GofancoMatrixAPI:
             return None
 
         except asyncio.TimeoutError:
-            _LOGGER.error(
-                "Timeout connecting to device at %s:%s", self.host, self.port
+            request_failed = True
+            # The device's single-threaded server is busy (a save/recall from
+            # the web UI can hold it for >2 minutes). Back off so we don't
+            # stack more connections on it while it recovers.
+            self._backoff_until = (
+                asyncio.get_event_loop().time() + TIMEOUT_BACKOFF
+            )
+            _LOGGER.warning(
+                "Timeout talking to device at %s:%s — backing off polls for %ss",
+                self.host,
+                self.port,
+                TIMEOUT_BACKOFF,
             )
             return None
         except Exception as e:
+            request_failed = True
             _LOGGER.error("Error sending HTTP/0.9 request: %s", e)
             return None
         finally:
-            # Always close the connection to prevent leaks.
-            # Setting SO_LINGER(on, timeout=0) forces a TCP RST instead of a
-            # graceful FIN/ACK sequence. This releases the connection slot on
-            # the device's limited TCP table immediately rather than leaving it
-            # in TIME_WAIT, which is the primary cause of the web UI crashing.
+            # On success, close gracefully (FIN/ACK) exactly like the device's
+            # own web UI does — the device handles that fine indefinitely.
+            # Only on failure do we force a TCP RST via SO_LINGER(on, 0):
+            # the connection may be stuck on a busy device, and an abort frees
+            # its connection slot immediately. Never RST healthy connections —
+            # embedded TCP stacks can leak control blocks when a peer aborts
+            # mid-close, which exhausts the pool and kills the web UI.
             if writer is not None:
                 try:
-                    sock = writer.get_extra_info("socket")
-                    if sock:
-                        sock.setsockopt(
-                            socket.SOL_SOCKET,
-                            socket.SO_LINGER,
-                            struct.pack("ii", 1, 0),
-                        )
+                    if request_failed:
+                        sock = writer.get_extra_info("socket")
+                        if sock:
+                            sock.setsockopt(
+                                socket.SOL_SOCKET,
+                                socket.SO_LINGER,
+                                struct.pack("ii", 1, 0),
+                            )
                     writer.close()
                     await writer.wait_closed()
                 except Exception as e:
