@@ -44,6 +44,30 @@ class GofancoMatrixAPI:
         # enforce a minimum gap between requests.
         self._last_request_time: float = 0.0
 
+        # Set when Home Assistant is stopping; refuses new requests so we
+        # never open a connection we might abandon mid-conversation.
+        self._shutting_down = False
+
+        # The currently running (shielded) request task, kept so shutdown
+        # can wait for it to finish and close the socket gracefully.
+        self._active_task: Optional[asyncio.Task] = None
+
+    async def async_shutdown(self) -> None:
+        """Drain the in-flight request before Home Assistant exits.
+
+        Abandoning a request mid-conversation is what kills the device on
+        HA restarts: its single-threaded server either blocks forever
+        waiting for data that never arrives, or gets a TCP RST when it
+        writes its response to our dead socket.
+        """
+        self._shutting_down = True
+        task = self._active_task
+        if task is not None and not task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=10.0)
+            except Exception:
+                pass
+
     def should_skip_poll(self) -> bool:
         """Return True if the coordinator should skip this poll cycle."""
         if self._command_in_flight:
@@ -103,7 +127,21 @@ class GofancoMatrixAPI:
         and enforces a minimum inter-request interval to avoid exhausting the
         device's limited TCP connection table.
         """
+        if self._shutting_down:
+            _LOGGER.debug("Refusing new request — Home Assistant is stopping")
+            return None
+
         async with self._request_lock:
+            # If a previous request was cancelled but is still finishing in
+            # the background (shielded), wait for it — never run two
+            # connections against the device at once.
+            prev = self._active_task
+            if prev is not None and not prev.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(prev), timeout=15.0)
+                except Exception:
+                    pass
+
             # Enforce minimum gap between requests
             loop = asyncio.get_event_loop()
             now = loop.time()
@@ -111,11 +149,29 @@ class GofancoMatrixAPI:
             if elapsed < MIN_REQUEST_INTERVAL:
                 await asyncio.sleep(MIN_REQUEST_INTERVAL - elapsed)
 
-            result = await self._do_request(payload, content_type)
-
-            # Record completion time *after* the request so the interval is
-            # measured from the end of one request to the start of the next.
-            self._last_request_time = loop.time()
+            # Once started, a request must run to completion even if our
+            # caller is cancelled (e.g. HA restarting). Abandoning the
+            # conversation leaves the device's single-threaded server blocked
+            # on a half-open socket or RSTs it mid-response — both kill the
+            # web UI. asyncio.shield lets the task finish in the background;
+            # async_shutdown() waits for it before the process exits.
+            task = asyncio.ensure_future(self._do_request(payload, content_type))
+            self._active_task = task
+            try:
+                result = await asyncio.shield(task)
+            except asyncio.CancelledError:
+                _LOGGER.debug(
+                    "Caller cancelled — letting in-flight device request finish"
+                )
+                raise
+            finally:
+                # Keep the reference while the shielded task is still
+                # running so shutdown (or the next request) can wait on it.
+                if task.done():
+                    self._active_task = None
+                # Record completion time *after* the request so the interval
+                # is measured from the end of one request to the next.
+                self._last_request_time = loop.time()
 
         return result
 
@@ -132,6 +188,13 @@ class GofancoMatrixAPI:
                 asyncio.open_connection(self.host, self.port),
                 timeout=10.0,
             )
+
+            # Send the (tiny) request in a single immediate segment so the
+            # device's single-threaded server never sits waiting on a
+            # partially received request.
+            sock = writer.get_extra_info("socket")
+            if sock:
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
             request = (
                 f"POST /inform.cgi HTTP/1.1\r\n"
