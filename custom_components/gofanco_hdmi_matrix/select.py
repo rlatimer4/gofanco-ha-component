@@ -105,7 +105,10 @@ class GofancoMatrixOutputSelect(CoordinatorEntity, SelectEntity):
         success = await self.coordinator.api.async_set_output(self._output, input_num)
         
         if success:
-            await self.coordinator.async_request_refresh()
+            # async_set_output already fetched fresh status to verify the
+            # switch — push that to the coordinator rather than hitting the
+            # device with yet another request.
+            self.coordinator.async_set_updated_data(self.coordinator.api.last_status)
         else:
             _LOGGER.error(
                 "Failed to set output %s to input %s (%s)",
